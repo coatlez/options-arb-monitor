@@ -602,12 +602,6 @@ input:focus { border-color: var(--accent); }
       <span id="history-count">历史数据：0条</span>
     </div>
   </div>
-  <div class="header-right">
-    <div class="api-status" id="api-status">
-      <span class="status-dot"></span>
-      <span>API未配置</span>
-    </div>
-  </div>
 </header>
 
 <!-- MAIN -->
@@ -615,13 +609,6 @@ input:focus { border-color: var(--accent); }
 
   <!-- LEFT PANEL -->
   <aside class="left-panel">
-
-    <!-- API KEY -->
-    <div class="panel-block" id="block-apikey">
-      <div class="block-title">ANTHROPIC API</div>
-      <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off">
-      <button class="btn-secondary" onclick="saveApiKey()">保存密钥</button>
-    </div>
 
     <!-- UPLOAD ZONE -->
     <div class="panel-block">
@@ -771,38 +758,11 @@ let lastResult = null;
 // ── Init ─────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadHistory();
-  loadApiKey();
   setupUpload();
   renderHistoryStats();
 });
 
-// ── API Key ──────────────────────────────────────────────────
-function saveApiKey() {
-  const key = document.getElementById('api-key-input').value.trim();
-  if (!key.startsWith('sk-ant-')) {
-    alert('请输入正确的 Anthropic API Key（以 sk-ant- 开头）');
-    return;
-  }
-  sessionStorage.setItem('arb_api_key', key);
-  document.getElementById('api-key-input').value = '●'.repeat(20);
-  setApiStatus(true);
-}
-
-function loadApiKey() {
-  const k = sessionStorage.getItem('arb_api_key');
-  if (k) {
-    document.getElementById('api-key-input').value = '●'.repeat(20);
-    setApiStatus(true);
-  }
-}
-
-function getApiKey() { return sessionStorage.getItem('arb_api_key'); }
-
-function setApiStatus(ok) {
-  const el = document.getElementById('api-status');
-  el.querySelector('.status-dot').className = 'status-dot' + (ok ? ' active' : '');
-  el.querySelector('span:last-child').textContent = ok ? 'API已连接' : 'API未配置';
-}
+// ── API (embedded, no user key needed) ───────────────────────
 
 // ── Upload / Image Handling ───────────────────────────────────
 function setupUpload() {
@@ -866,30 +826,23 @@ function clearImages() {
 
 // ── Main Analysis ─────────────────────────────────────────────
 async function runAnalysis() {
-  const apiKey = getApiKey();
-  if (!apiKey) { alert('请先配置 Anthropic API Key'); return; }
   if (uploadedImages.length === 0) { alert('请先上传截图'); return; }
 
   showLoading('正在识别截图数据...');
 
   try {
-    // Step 1: OCR + extract structured data from all images
     setLoadingText('Claude 正在识别期权链数据...', `共 ${uploadedImages.length} 张截图`);
-    const rawData = await extractDataFromImages(apiKey);
+    const rawData = await extractDataFromImages();
 
-    // Step 2: Calculate metrics
     setLoadingText('计算指标中...', 'Skew · CSR · CPR · 期限结构');
     const metrics = computeMetrics(rawData);
 
-    // Step 3: Historical context
     setLoadingText('对比历史分位...', `历史记录 ${analysisHistory.length} 条`);
     const histCtx = computeHistoricalContext(metrics);
 
-    // Step 4: Score & rank
     setLoadingText('生成套利建议...', '');
     const opportunities = scoreOpportunities(metrics, histCtx);
 
-    // Step 5: Save snapshot
     saveSnapshot(metrics);
 
     lastResult = { rawData, metrics, histCtx, opportunities };
@@ -903,7 +856,7 @@ async function runAnalysis() {
 }
 
 // ── Claude API Call ───────────────────────────────────────────
-async function extractDataFromImages(apiKey) {
+async function extractDataFromImages() {
   const imageContents = uploadedImages.map(img => ({
     type: 'image',
     source: {
@@ -944,7 +897,7 @@ async function extractDataFromImages(apiKey) {
 5. 根据行权价和标的价格判断近月/次近月/季月
 6. 只返回JSON，不要任何解释文字`;
 
-  const response = await callClaude(apiKey, [
+  const response = await callClaude([
     ...imageContents,
     { type: 'text', text: prompt }
   ]);
@@ -961,7 +914,7 @@ async function extractDataFromImages(apiKey) {
   }
 }
 
-async function callClaude(apiKey, contentArr, system = '') {
+async function callClaude(contentArr, system = '') {
   const body = {
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4000,
@@ -973,7 +926,6 @@ async function callClaude(apiKey, contentArr, system = '') {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true'
     },
