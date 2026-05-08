@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>期权套利监控系统</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+SC:wght@300;400;500&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg:       #080a0e;
+  --s1:       #0c0f16;
+  --s2:       #111520;
+  --s3:       #161c2a;
+  --border:   #1c2438;
+  --border2:  #243048;
+
+  --accent:   #4f8ef7;
+  --accent-d: #1a3a7a;
+  --gold:     #d4a847;
+  --gold-d:   #5a3f0a;
+  --green:    #35c78a;
+  --green-d:  #0a3d24;
+  --red:      #e05c7a;
+  --red-d:    #4a1020;
+  --red-dim:  #a04060;
+  --purple:   #9b72e8;
+
+  --text:     #cdd5e8;
+  --text2:    #8a95b0;
+  --muted:    #485070;
+
+  --mono:     'JetBrains Mono', monospace;
+  --display:  'Syne', sans-serif;
+  --body:     'Noto Sans SC', sans-serif;
+
+  --radius:   6px;
+  --radius-lg: 10px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 14px; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* NOISE TEXTURE */
+.noise {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.4;
+}
+
+/* HEADER */
+header {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+  height: 52px;
+  background: rgba(8,10,14,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  font-family: var(--display);
+  font-size: 18px; font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+.logo span { color: var(--accent); }
+
+.header-meta {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  margin-top: 2px;
+}
+.dot {
+  width: 3px; height: 3px; border-radius: 50%;
+  background: var(--muted);
+}
+
+.api-status {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.3s;
+}
+.status-dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+/* LAYOUT */
+main {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: calc(100vh - 52px);
+  position: relative; z-index: 1;
+}
+
+/* LEFT PANEL */
+.left-panel {
+  background: var(--s1);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 16px;
+  overflow-y: auto;
+  max-height: calc(100vh - 52px);
+  position: sticky; top: 52px;
+}
+
+.panel-block {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+}
+
+.block-title {
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.12em; color: var(--muted);
+  text-transform: uppercase; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.hint { font-size: 10px; color: var(--muted); font-family: var(--body); }
+
+/* INPUTS */
+input[type="text"], input[type="password"], input[type="number"] {
+  width: 100%;
+  background: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono); font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 0.2s;
+  margin-bottom: 8px;
+}
+input:focus { border-color: var(--accent); }
+
+/* UPLOAD ZONE */
+.upload-zone {
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius-lg);
+  padding: 20px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 10px;
+}
+.upload-zone:hover { border-color: var(--accent); background: rgba(79,142,247,0.04); }
+.upload-zone.drag-over { border-color: var(--accent); background: rgba(79,142,247,0.08); }
+
+.upload-icon {
+  font-size: 24px; color: var(--muted);
+  margin-bottom: 6px; line-height: 1;
+}
+.upload-text {
+  font-size: 12px; color: var(--text2); line-height: 1.6;
+}
+.upload-text span { font-size: 11px; color: var(--muted); }
+
+/* IMAGE GRID */
+.image-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 6px; margin-bottom: 10px;
+}
+.image-thumb {
+  position: relative;
+  aspect-ratio: 9/16;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.image-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.image-thumb .thumb-remove {
+  position: absolute; top: 2px; right: 2px;
+  width: 16px; height: 16px;
+  background: rgba(0,0,0,0.7);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--red);
+  opacity: 0; transition: opacity 0.2s;
+}
+.image-thumb:hover .thumb-remove { opacity: 1; }
+.image-thumb .thumb-label {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,0.7);
+  font-family: var(--mono); font-size: 9px;
+  color: var(--text2); padding: 2px 4px;
+  text-align: center;
+}
+
+/* UPLOAD GUIDE */
+.upload-guide { display: flex; flex-direction: column; gap: 4px; }
+.guide-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: var(--text2);
+}
+.tag {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+.tag-mo { background: rgba(79,142,247,0.2); color: var(--accent); }
+.tag-ho { background: rgba(212,168,71,0.2); color: var(--gold); }
+.tag-io { background: rgba(53,199,138,0.2); color: var(--green); }
+
+/* HV GRID */
+.hv-grid { display: flex; flex-direction: column; gap: 6px; }
+.hv-item {
+  display: flex; align-items: center; gap: 6px;
+}
+.hv-item label {
+  font-size: 11px; color: var(--text2); width: 56px; flex-shrink: 0;
+}
+.hv-item input {
+  flex: 1; margin-bottom: 0;
+  padding: 6px 8px; font-size: 12px;
+}
+.hv-item span { font-size: 11px; color: var(--muted); }
+
+/* BUTTONS */
+.action-btns { display: flex; flex-direction: column; gap: 8px; }
+
+.btn-primary {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none; border-radius: var(--radius);
+  font-family: var(--display); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.2s;
+  position: relative; overflow: hidden;
+}
+.btn-primary::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+}
+.btn-primary:hover { background: #6aa0ff; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(79,142,247,0.4); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { background: var(--s3); color: var(--muted); transform: none; box-shadow: none; cursor: not-allowed; }
+
+.btn-icon { font-size: 16px; }
+
+.btn-secondary {
+  width: 100%;
+  background: var(--s3); color: var(--text2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 11px;
+  padding: 8px; cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+.btn-ghost {
+  background: none; color: var(--text2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 11px;
+  padding: 6px 12px; cursor: pointer;
+  transition: all 0.2s; width: 100%;
+}
+.btn-ghost:hover { border-color: var(--border2); color: var(--text); }
+.btn-tiny { width: auto; padding: 3px 8px; font-size: 10px; }
+
+/* HISTORY STATS */
+.hist-stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 0; border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.hist-stat-row:last-child { border-bottom: none; }
+.hist-stat-label { color: var(--text2); }
+.hist-stat-val { font-family: var(--mono); color: var(--text); }
+.hist-ready { color: var(--green); }
+.hist-building { color: var(--gold); }
+
+/* RIGHT PANEL */
+.right-panel {
+  padding: 24px;
+  overflow-y: auto;
+  max-height: calc(100vh - 52px);
+}
+
+/* EMPTY STATE */
+.empty-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+.empty-icon {
+  font-size: 48px; color: var(--border2);
+  margin-bottom: 16px; line-height: 1;
+  animation: pulse 3s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.8} }
+.empty-title { font-family: var(--display); font-size: 18px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.empty-sub { font-size: 12px; color: var(--muted); margin-bottom: 24px; }
+.empty-flow { display: flex; align-items: center; gap: 8px; }
+.flow-step {
+  background: var(--s2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px 14px;
+  font-family: var(--mono); font-size: 11px; color: var(--text2);
+}
+.flow-arrow { color: var(--muted); font-size: 12px; }
+
+/* LOADING */
+.loading-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 60vh; gap: 16px;
+}
+.loading-ring {
+  width: 48px; height: 48px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-family: var(--display); font-size: 16px; color: var(--text2); }
+.loading-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* RESULTS */
+.result-section {
+  margin-bottom: 24px;
+  animation: fadeUp 0.4s ease both;
+}
+@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+.result-section:nth-child(2) { animation-delay: 0.05s; }
+.result-section:nth-child(3) { animation-delay: 0.1s; }
+.result-section:nth-child(4) { animation-delay: 0.15s; }
+.result-section:nth-child(5) { animation-delay: 0.2s; }
+
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.section-title {
+  font-family: var(--display); font-size: 14px; font-weight: 700;
+  letter-spacing: 0.04em; color: var(--text);
+}
+.section-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* OPPORTUNITY CARD */
+.opp-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: start;
+  transition: border-color 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.opp-card::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+}
+.opp-card.grade-A { border-color: rgba(53,199,138,0.3); }
+.opp-card.grade-A::before { background: var(--green); }
+.opp-card.grade-B { border-color: rgba(212,168,71,0.3); }
+.opp-card.grade-B::before { background: var(--gold); }
+.opp-card.grade-C { border-color: rgba(79,142,247,0.3); }
+.opp-card.grade-C::before { background: var(--accent); }
+.opp-card.grade-D { border-color: var(--border); }
+.opp-card.grade-D::before { background: var(--muted); }
+.opp-card:hover { border-color: var(--border2); }
+
+.opp-rank {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--display); font-size: 14px; font-weight: 800;
+}
+.rank-1 { background: rgba(212,168,71,0.15); color: var(--gold); border: 1px solid rgba(212,168,71,0.3); }
+.rank-2 { background: rgba(79,142,247,0.1); color: var(--accent); border: 1px solid rgba(79,142,247,0.2); }
+.rank-3 { background: rgba(53,199,138,0.1); color: var(--green); border: 1px solid rgba(53,199,138,0.2); }
+.rank-n { background: var(--s2); color: var(--muted); border: 1px solid var(--border); }
+
+.opp-main {}
+.opp-title {
+  font-family: var(--display); font-size: 14px; font-weight: 700;
+  color: var(--text); margin-bottom: 4px;
+}
+.opp-sub {
+  font-size: 12px; color: var(--text2); margin-bottom: 8px; line-height: 1.5;
+}
+.opp-metrics {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.metric-pill {
+  background: var(--s2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 8px;
+  font-family: var(--mono); font-size: 10px;
+  display: flex; gap: 4px;
+}
+.metric-pill .pill-label { color: var(--muted); }
+.metric-pill .pill-val { color: var(--text); font-weight: 600; }
+.metric-pill.highlight { border-color: var(--accent-d); background: rgba(79,142,247,0.08); }
+.metric-pill.highlight .pill-val { color: var(--accent); }
+
+.opp-score {
+  text-align: right;
+}
+.score-grade {
+  font-family: var(--display); font-size: 28px; font-weight: 800; line-height: 1;
+}
+.grade-A .score-grade { color: var(--green); }
+.grade-B .score-grade { color: var(--gold); }
+.grade-C .score-grade { color: var(--accent); }
+.grade-D .score-grade { color: var(--muted); }
+.score-pts { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.score-signal {
+  margin-top: 4px; font-size: 10px; padding: 2px 6px;
+  border-radius: 3px; text-align: center;
+  font-family: var(--mono);
+}
+.signal-strong { background: rgba(53,199,138,0.15); color: var(--green); }
+.signal-watch { background: rgba(212,168,71,0.15); color: var(--gold); }
+.signal-weak { background: var(--s2); color: var(--muted); }
+
+.opp-verdict {
+  grid-column: 1 / -1;
+  background: var(--s2); border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12px; color: var(--text2); line-height: 1.6;
+  border-left: 2px solid var(--border2);
+}
+.grade-A .opp-verdict { border-left-color: var(--green); }
+.grade-B .opp-verdict { border-left-color: var(--gold); }
+
+/* TERM STRUCTURE */
+.term-table {
+  width: 100%; border-collapse: collapse;
+}
+.term-table th {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+  color: var(--muted); text-align: left; padding: 6px 10px;
+  border-bottom: 1px solid var(--border); text-transform: uppercase;
+}
+.term-table td {
+  padding: 10px 10px; border-bottom: 1px solid var(--border);
+  font-size: 12px; vertical-align: middle;
+}
+.term-table tr:last-child td { border-bottom: none; }
+.term-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+.asset-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+}
+
+.iv-bar-wrap {
+  display: flex; align-items: center; gap: 8px;
+}
+.iv-bar {
+  height: 4px; border-radius: 2px;
+  background: var(--border2); flex: 1; max-width: 80px;
+  position: relative; overflow: hidden;
+}
+.iv-bar-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  border-radius: 2px; transition: width 0.5s ease;
+}
+.iv-val { font-family: var(--mono); font-size: 11px; min-width: 40px; }
+
+.skew-badge {
+  display: inline-block; padding: 2px 7px; border-radius: 3px;
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+}
+.skew-high { background: rgba(224,92,122,0.15); color: var(--red); }
+.skew-mid  { background: rgba(212,168,71,0.15); color: var(--gold); }
+.skew-low  { background: rgba(53,199,138,0.15); color: var(--green); }
+
+.structure-arrow {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  display: flex; align-items: center; gap: 4px;
+}
+.contango { color: var(--green); }
+.backwardation { color: var(--red); }
+.flat { color: var(--muted); }
+
+/* CROSS ASSET */
+.cross-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.cross-card {
+  background: var(--s1); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px;
+}
+.cross-card-title {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  margin-bottom: 10px; letter-spacing: 0.08em;
+}
+.cross-metric { margin-bottom: 8px; }
+.cross-metric .cm-label { font-size: 11px; color: var(--text2); margin-bottom: 2px; }
+.cross-metric .cm-val { font-family: var(--mono); font-size: 15px; font-weight: 600; }
+.cross-rank { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.cross-rank-label { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+
+/* HISTORICAL CONTEXT */
+.hist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hist-card {
+  background: var(--s1); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px;
+}
+.hist-card-title {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  margin-bottom: 10px; letter-spacing: 0.08em;
+}
+.percentile-bar {
+  height: 6px; background: var(--border); border-radius: 3px;
+  position: relative; margin: 8px 0;
+}
+.percentile-fill {
+  position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+  transition: width 0.8s ease;
+}
+.percentile-marker {
+  position: absolute; top: -3px; bottom: -3px; width: 2px;
+  background: #fff; border-radius: 1px;
+  transform: translateX(-50%);
+}
+.z-score-display {
+  font-family: var(--mono); font-size: 18px; font-weight: 600;
+}
+.z-pos { color: var(--red); }
+.z-neg { color: var(--green); }
+.z-neutral { color: var(--muted); }
+
+/* RAW DATA */
+.raw-data {
+  background: var(--s1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px;
+  font-family: var(--mono); font-size: 11px; color: var(--text2);
+  line-height: 1.8; white-space: pre-wrap;
+  max-height: 300px; overflow-y: auto;
+}
+
+/* UTILITIES */
+.hidden { display: none !important; }
+.green { color: var(--green); }
+.gold { color: var(--gold); }
+.red { color: var(--red); }
+.blue { color: var(--accent); }
+.muted { color: var(--muted); }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* NO RESULTS */
+.no-data {
+  text-align: center; padding: 32px;
+  font-size: 12px; color: var(--muted); font-family: var(--mono);
+}
+
+@media (max-width: 768px) {
+  main { grid-template-columns: 1fr; }
+  .left-panel { position: static; max-height: none; }
+  .cross-grid { grid-template-columns: 1fr; }
+  .hist-grid { grid-template-columns: 1fr; }
+}
+
+</style>
+</head>
+<body>
+
+<div class="noise"></div>
+
+<!-- HEADER -->
+<header>
+  <div class="header-left">
+    <div class="logo">OPTIONS<span>ARB</span></div>
+    <div class="header-meta">
+      <span id="last-update">尚未更新</span>
+      <span class="dot"></span>
+      <span id="history-count">历史数据：0条</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="api-status" id="api-status">
+      <span class="status-dot"></span>
+      <span>API未配置</span>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main>
+
+  <!-- LEFT PANEL -->
+  <aside class="left-panel">
+
+    <!-- API KEY -->
+    <div class="panel-block" id="block-apikey">
+      <div class="block-title">ANTHROPIC API</div>
+      <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off">
+      <button class="btn-secondary" onclick="saveApiKey()">保存密钥</button>
+    </div>
+
+    <!-- UPLOAD ZONE -->
+    <div class="panel-block">
+      <div class="block-title">上传截图 <span class="hint">最多9张</span></div>
+      <div class="upload-zone" id="upload-zone">
+        <div class="upload-icon">⊕</div>
+        <div class="upload-text">粘贴或点击上传<br><span>近月·次近月·季月 × 三品种</span></div>
+        <input type="file" id="file-input" multiple accept="image/*" style="display:none">
+      </div>
+      <div class="image-grid" id="image-grid"></div>
+      <div class="upload-guide">
+        <div class="guide-row"><span class="tag tag-mo">MO</span> 中证1000：近月 次近月 季月</div>
+        <div class="guide-row"><span class="tag tag-ho">HO</span> 沪深300：近月 次近月 季月</div>
+        <div class="guide-row"><span class="tag tag-io">IO</span> 上证50：近月 次近月 季月</div>
+      </div>
+    </div>
+
+    <!-- HV INPUT -->
+    <div class="panel-block">
+      <div class="block-title">历史波动率参考 HV30</div>
+      <div class="hv-grid">
+        <div class="hv-item">
+          <label>中证1000</label>
+          <input type="number" id="hv-mo" value="22" step="0.1"><span>%</span>
+        </div>
+        <div class="hv-item">
+          <label>沪深300</label>
+          <input type="number" id="hv-ho" value="16" step="0.1"><span>%</span>
+        </div>
+        <div class="hv-item">
+          <label>上证50</label>
+          <input type="number" id="hv-io" value="14" step="0.1"><span>%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACTION BUTTONS -->
+    <div class="action-btns">
+      <button class="btn-primary" id="btn-analyze" onclick="runAnalysis()">
+        <span class="btn-icon">◎</span> 分析套利机会
+      </button>
+      <button class="btn-ghost" onclick="clearImages()">清空截图</button>
+    </div>
+
+    <!-- HISTORY STATS -->
+    <div class="panel-block" id="block-history" style="display:none">
+      <div class="block-title">历史基准状态</div>
+      <div id="history-stats"></div>
+      <button class="btn-ghost" style="margin-top:8px;font-size:11px;" onclick="exportHistory()">导出历史数据</button>
+      <button class="btn-ghost" style="margin-top:4px;font-size:11px;color:var(--red-dim);" onclick="clearHistory()">清除历史</button>
+    </div>
+
+  </aside>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+
+    <!-- EMPTY STATE -->
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">⬡</div>
+      <div class="empty-title">上传截图后开始分析</div>
+      <div class="empty-sub">支持同花顺期权链截图，粘贴即可识别</div>
+      <div class="empty-flow">
+        <div class="flow-step">截图</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">粘贴</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">分析</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">建议</div>
+      </div>
+    </div>
+
+    <!-- LOADING STATE -->
+    <div class="loading-state hidden" id="loading-state">
+      <div class="loading-ring"></div>
+      <div class="loading-text" id="loading-text">正在识别截图数据...</div>
+      <div class="loading-sub" id="loading-sub"></div>
+    </div>
+
+    <!-- RESULTS -->
+    <div class="results hidden" id="results">
+
+      <!-- OPPORTUNITY RANKING -->
+      <section class="result-section">
+        <div class="section-header">
+          <div class="section-title">套利机会排行</div>
+          <div class="section-meta" id="result-time"></div>
+        </div>
+        <div id="opportunity-list"></div>
+      </section>
+
+      <!-- TERM STRUCTURE -->
+      <section class="result-section">
+        <div class="section-header">
+          <div class="section-title">期限结构分析</div>
+          <div class="section-meta">近月 → 次近月 → 季月</div>
+        </div>
+        <div id="term-structure"></div>
+      </section>
+
+      <!-- CROSS ASSET -->
+      <section class="result-section">
+        <div class="section-header">
+          <div class="section-title">跨品种比较</div>
+          <div class="section-meta">同月份定价差异</div>
+        </div>
+        <div id="cross-asset"></div>
+      </section>
+
+      <!-- HISTORICAL CONTEXT -->
+      <section class="result-section" id="section-history" style="display:none">
+        <div class="section-header">
+          <div class="section-title">历史分位参考</div>
+          <div class="section-meta" id="history-data-count"></div>
+        </div>
+        <div id="historical-context"></div>
+      </section>
+
+      <!-- RAW DATA -->
+      <section class="result-section">
+        <div class="section-header">
+          <div class="section-title">识别数据明细</div>
+          <button class="btn-ghost btn-tiny" onclick="toggleRaw()">展开/收起</button>
+        </div>
+        <div id="raw-data" class="raw-data hidden"></div>
+      </section>
+
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ============================================================
+//  OPTIONS ARB MONITOR  —  app.js
+// ============================================================
+
+const STORAGE_KEY = 'optionsarb_history_v2';
+const MAX_HISTORY = 500;
+
+// ── State ────────────────────────────────────────────────────
+let uploadedImages = [];   // { dataUrl, file }
+let analysisHistory = [];  // persisted snapshots
+let lastResult = null;
+
+// ── Init ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadHistory();
+  loadApiKey();
+  setupUpload();
+  renderHistoryStats();
+});
+
+// ── API Key ──────────────────────────────────────────────────
+function saveApiKey() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key.startsWith('sk-ant-')) {
+    alert('请输入正确的 Anthropic API Key（以 sk-ant- 开头）');
+    return;
+  }
+  sessionStorage.setItem('arb_api_key', key);
+  document.getElementById('api-key-input').value = '●'.repeat(20);
+  setApiStatus(true);
+}
+
+function loadApiKey() {
+  const k = sessionStorage.getItem('arb_api_key');
+  if (k) {
+    document.getElementById('api-key-input').value = '●'.repeat(20);
+    setApiStatus(true);
+  }
+}
+
+function getApiKey() { return sessionStorage.getItem('arb_api_key'); }
+
+function setApiStatus(ok) {
+  const el = document.getElementById('api-status');
+  el.querySelector('.status-dot').className = 'status-dot' + (ok ? ' active' : '');
+  el.querySelector('span:last-child').textContent = ok ? 'API已连接' : 'API未配置';
+}
+
+// ── Upload / Image Handling ───────────────────────────────────
+function setupUpload() {
+  const zone = document.getElementById('upload-zone');
+  const input = document.getElementById('file-input');
+
+  zone.addEventListener('click', () => input.click());
+  input.addEventListener('change', e => addFiles(Array.from(e.target.files)));
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    addFiles(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/')));
+  });
+
+  document.addEventListener('paste', e => {
+    const items = Array.from(e.clipboardData.items).filter(i => i.type.startsWith('image/'));
+    if (items.length) addFiles(items.map(i => i.getAsFile()));
+  });
+}
+
+function addFiles(files) {
+  if (uploadedImages.length + files.length > 9) {
+    alert('最多上传9张截图');
+    files = files.slice(0, 9 - uploadedImages.length);
+  }
+  files.forEach(f => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      uploadedImages.push({ dataUrl: e.target.result, name: f.name });
+      renderImageGrid();
+    };
+    reader.readAsDataURL(f);
+  });
+}
+
+function renderImageGrid() {
+  const grid = document.getElementById('image-grid');
+  grid.innerHTML = uploadedImages.map((img, i) => `
+    <div class="image-thumb" onclick="removeImage(${i})">
+      <img src="${img.dataUrl}" alt="截图${i+1}">
+      <div class="thumb-remove">✕</div>
+      <div class="thumb-label">图${i+1}</div>
+    </div>
+  `).join('');
+  document.getElementById('btn-analyze').disabled = uploadedImages.length === 0;
+}
+
+function removeImage(i) {
+  uploadedImages.splice(i, 1);
+  renderImageGrid();
+}
+
+function clearImages() {
+  uploadedImages = [];
+  renderImageGrid();
+  document.getElementById('image-grid').innerHTML = '';
+  showEmpty();
+}
+
+// ── Main Analysis ─────────────────────────────────────────────
+async function runAnalysis() {
+  const apiKey = getApiKey();
+  if (!apiKey) { alert('请先配置 Anthropic API Key'); return; }
+  if (uploadedImages.length === 0) { alert('请先上传截图'); return; }
+
+  showLoading('正在识别截图数据...');
+
+  try {
+    // Step 1: OCR + extract structured data from all images
+    setLoadingText('Claude 正在识别期权链数据...', `共 ${uploadedImages.length} 张截图`);
+    const rawData = await extractDataFromImages(apiKey);
+
+    // Step 2: Calculate metrics
+    setLoadingText('计算指标中...', 'Skew · CSR · CPR · 期限结构');
+    const metrics = computeMetrics(rawData);
+
+    // Step 3: Historical context
+    setLoadingText('对比历史分位...', `历史记录 ${analysisHistory.length} 条`);
+    const histCtx = computeHistoricalContext(metrics);
+
+    // Step 4: Score & rank
+    setLoadingText('生成套利建议...', '');
+    const opportunities = scoreOpportunities(metrics, histCtx);
+
+    // Step 5: Save snapshot
+    saveSnapshot(metrics);
+
+    lastResult = { rawData, metrics, histCtx, opportunities };
+    renderResults(lastResult);
+
+  } catch (err) {
+    showEmpty();
+    alert('分析失败：' + err.message);
+    console.error(err);
+  }
+}
+
+// ── Claude API Call ───────────────────────────────────────────
+async function extractDataFromImages(apiKey) {
+  const imageContents = uploadedImages.map(img => ({
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: img.dataUrl.split(';')[0].split(':')[1],
+      data: img.dataUrl.split(',')[1]
+    }
+  }));
+
+  const prompt = `你是一个期权数据提取专家。请从这些中证1000(MO)、沪深300(HO/IO)或上证50期权链截图中提取数据。
+
+请以JSON格式返回，结构如下：
+{
+  "snapshots": [
+    {
+      "product": "MO",           // MO=中证1000, HO=沪深300, IO=上证50
+      "contract": "MO2606",      // 合约代码
+      "expiry_type": "near",     // near=近月, mid=次近月, far=季月
+      "underlying_price": 8714.51,
+      "options": [
+        {
+          "strike": 8700,
+          "call_price": 246.2,
+          "call_iv": 18.64,
+          "put_price": 313.6,
+          "put_iv": 25.79
+        }
+      ]
+    }
+  ]
+}
+
+重要说明：
+1. 每张截图对应一个snapshot
+2. 只提取平值附近±500点内的合约（约5~8行）
+3. call_iv和put_iv单位是百分比数值（如18.64表示18.64%）
+4. 如果某个值看不清或不存在，用null
+5. 根据行权价和标的价格判断近月/次近月/季月
+6. 只返回JSON，不要任何解释文字`;
+
+  const response = await callClaude(apiKey, [
+    ...imageContents,
+    { type: 'text', text: prompt }
+  ]);
+
+  const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  const clean = text.replace(/```json\n?|```\n?/g, '').trim();
+
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error('无法解析期权数据，请检查截图质量');
+  }
+}
+
+async function callClaude(apiKey, contentArr, system = '') {
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4000,
+    messages: [{ role: 'user', content: contentArr }]
+  };
+  if (system) body.system = system;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API错误 ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Metrics Computation ───────────────────────────────────────
+function computeMetrics(rawData) {
+  const snapshots = rawData.snapshots || [];
+  const results = [];
+
+  // Group by product
+  const byProduct = {};
+  snapshots.forEach(s => {
+    if (!byProduct[s.product]) byProduct[s.product] = [];
+    byProduct[s.product].push(s);
+  });
+
+  const hvMap = {
+    MO: parseFloat(document.getElementById('hv-mo').value) / 100,
+    HO: parseFloat(document.getElementById('hv-ho').value) / 100,
+    IO: parseFloat(document.getElementById('hv-io').value) / 100,
+  };
+
+  Object.entries(byProduct).forEach(([product, contracts]) => {
+    const hv = hvMap[product] || 0.20;
+
+    contracts.forEach(contract => {
+      const opts = contract.options?.filter(o => o.strike && o.call_price && o.put_price) || [];
+      if (opts.length < 2) return;
+
+      const spot = contract.underlying_price;
+
+      // Find ATM option (closest to spot)
+      const atm = opts.reduce((a, b) =>
+        Math.abs(a.strike - spot) <= Math.abs(b.strike - spot) ? a : b
+      );
+
+      // Skew: ATM Put IV - ATM Call IV
+      const skew = atm.put_iv && atm.call_iv ? atm.put_iv - atm.call_iv : null;
+
+      // Find best pair for call spread and put spread (~200pt width)
+      const targetWidth = getTargetWidth(spot);
+      const callSpread = findBestSpread(opts, 'call', targetWidth);
+      const putSpread  = findBestSpread(opts, 'put',  targetWidth);
+
+      // Call Spread Ratio
+      const csr = callSpread ? callSpread.width / callSpread.cost : null;
+      const psr = putSpread  ? putSpread.width  / putSpread.cost  : null;
+
+      // CP Ratio (call cost / put cost, same width)
+      const cpr = (callSpread && putSpread) ? callSpread.cost / putSpread.cost : null;
+
+      // vs HV theoretical
+      const T = estimateDaysToExpiry(contract.expiry_type) / 365;
+      const th_call = callSpread ? bsCallSpread(spot, callSpread.k1, callSpread.k2, T, hv) : null;
+      const th_put  = putSpread  ? bsPutSpread(spot,  putSpread.k1,  putSpread.k2,  T, hv) : null;
+      const cheap_call = (th_call && callSpread) ? (th_call - callSpread.cost) / th_call * 100 : null;
+      const cheap_put  = (th_put  && putSpread)  ? (th_put  - putSpread.cost)  / th_put  * 100 : null;
+
+      // Breakeven distances
+      const be_call = callSpread ? (callSpread.k1 + callSpread.cost - spot) / spot * 100 : null;
+      const be_put  = putSpread  ? (spot - (putSpread.k1 - putSpread.cost)) / spot * 100 : null;
+
+      // Max profit / cost ratio (risk-reward)
+      const rr_call = callSpread ? (callSpread.width - callSpread.cost) / callSpread.cost : null;
+      const rr_put  = putSpread  ? (putSpread.width  - putSpread.cost)  / putSpread.cost  : null;
+
+      results.push({
+        product, contract: contract.contract,
+        expiry_type: contract.expiry_type,
+        spot, atm, skew, hv: hv * 100,
+        callSpread, putSpread,
+        csr, psr, cpr,
+        cheap_call, cheap_put,
+        be_call, be_put,
+        rr_call, rr_put,
+        T, opts
+      });
+    });
+  });
+
+  return results;
+}
+
+function getTargetWidth(spot) {
+  if (spot > 6000) return Math.round(spot * 0.025 / 100) * 100;
+  return 200;
+}
+
+function findBestSpread(opts, type, targetWidth) {
+  const sorted = [...opts].sort((a, b) => a.strike - b.strike);
+  let best = null;
+
+  for (let i = 0; i < sorted.length; i++) {
+    for (let j = i + 1; j < sorted.length; j++) {
+      const width = sorted[j].strike - sorted[i].strike;
+      if (Math.abs(width - targetWidth) > targetWidth * 0.6) continue;
+
+      let cost, k1, k2;
+      if (type === 'call') {
+        if (!sorted[i].call_price || !sorted[j].call_price) continue;
+        cost = sorted[i].call_price - sorted[j].call_price;
+        k1 = sorted[i].strike; k2 = sorted[j].strike;
+      } else {
+        if (!sorted[j].put_price || !sorted[i].put_price) continue;
+        cost = sorted[j].put_price - sorted[i].put_price;
+        k1 = sorted[j].strike; k2 = sorted[i].strike;
+      }
+
+      if (cost <= 0) continue;
+      const ratio = width / cost;
+      if (!best || ratio > best.width / best.cost) {
+        best = { k1, k2, cost, width, ratio };
+      }
+    }
+  }
+  return best;
+}
+
+function estimateDaysToExpiry(type) {
+  return type === 'near' ? 21 : type === 'mid' ? 49 : 112;
+}
+
+// Black-Scholes helpers
+function bsCallSpread(S, K1, K2, T, sigma, r = 0.02) {
+  return bsCall(S, K1, T, r, sigma) - bsCall(S, K2, T, r, sigma);
+}
+function bsPutSpread(S, K1, K2, T, sigma, r = 0.02) {
+  return bsPut(S, K1, T, r, sigma) - bsPut(S, K2, T, r, sigma);
+}
+function bsCall(S, K, T, r, sigma) {
+  if (T <= 0 || sigma <= 0) return Math.max(S - K, 0);
+  const d1 = (Math.log(S/K) + (r + 0.5*sigma*sigma)*T) / (sigma*Math.sqrt(T));
+  const d2 = d1 - sigma*Math.sqrt(T);
+  return S*normCDF(d1) - K*Math.exp(-r*T)*normCDF(d2);
+}
+function bsPut(S, K, T, r, sigma) {
+  if (T <= 0 || sigma <= 0) return Math.max(K - S, 0);
+  const d1 = (Math.log(S/K) + (r + 0.5*sigma*sigma)*T) / (sigma*Math.sqrt(T));
+  const d2 = d1 - sigma*Math.sqrt(T);
+  return K*Math.exp(-r*T)*normCDF(-d2) - S*normCDF(-d1);
+}
+function normCDF(x) {
+  const t = 1/(1+0.2316419*Math.abs(x));
+  const d = 0.3989423*Math.exp(-x*x/2);
+  const p = d*t*(0.3193815+t*(-0.3565638+t*(1.7814779+t*(-1.8212560+t*1.3302744))));
+  return x >= 0 ? 1-p : p;
+}
+
+// ── Historical Context ─────────────────────────────────────────
+function computeHistoricalContext(metrics) {
+  if (analysisHistory.length < 5) return null;
+
+  const ctx = {};
+  metrics.forEach(m => {
+    const key = `${m.product}_${m.expiry_type}`;
+    const hist = analysisHistory
+      .map(h => h.find(x => x.product === m.product && x.expiry_type === m.expiry_type))
+      .filter(Boolean);
+
+    if (hist.length < 5) return;
+
+    const skews = hist.map(h => h.skew).filter(v => v != null);
+    const csrs  = hist.map(h => h.csr).filter(v => v != null);
+
+    ctx[key] = {
+      skew: computeStats(skews, m.skew),
+      csr:  computeStats(csrs,  m.csr),
+      n: hist.length
+    };
+  });
+  return ctx;
+}
+
+function computeStats(arr, current) {
+  if (!arr.length || current == null) return null;
+  const mean = arr.reduce((a,b) => a+b, 0) / arr.length;
+  const std  = Math.sqrt(arr.reduce((a,b) => a+(b-mean)**2, 0) / arr.length);
+  const z    = std > 0 ? (current - mean) / std : 0;
+  const sorted = [...arr].sort((a,b) => a-b);
+  const pct  = sorted.filter(v => v <= current).length / sorted.length * 100;
+  return { mean, std, z, pct, n: arr.length };
+}
+
+// ── Scoring & Ranking ─────────────────────────────────────────
+function scoreOpportunities(metrics, histCtx) {
+  const opportunities = [];
+
+  // Score each tradeable contract (near + mid only)
+  const tradeable = metrics.filter(m => m.expiry_type !== 'far');
+
+  tradeable.forEach(m => {
+    ['call', 'put'].forEach(dir => {
+      const spread = dir === 'call' ? m.callSpread : m.putSpread;
+      const csr    = dir === 'call' ? m.csr : m.psr;
+      const cheap  = dir === 'call' ? m.cheap_call : m.cheap_put;
+      const be     = dir === 'call' ? m.be_call : m.be_put;
+      const rr     = dir === 'call' ? m.rr_call : m.rr_put;
+
+      if (!spread || !csr) return;
+
+      let score = 0; const checks = [];
+
+      // 1. 性价比 (max 25)
+      const ratio_pts = Math.min(25, Math.max(0, (csr - 1.5) / 3.5 * 25));
+      score += ratio_pts;
+      checks.push({ name: '性价比', val: csr.toFixed(2)+'×',
+        pass: csr >= 3.5, warn: csr >= 2.5 });
+
+      // 2. IV偏斜 (max 20) — Call benefits from high skew, Put benefits from low skew
+      const skewPts = m.skew != null ? (dir === 'call'
+        ? Math.min(20, Math.max(0, (m.skew - 3) / 10 * 20))
+        : Math.min(20, Math.max(0, (10 - m.skew) / 10 * 20))) : 0;
+      score += skewPts;
+      checks.push({ name: 'IV偏斜', val: (m.skew != null ? m.skew.toFixed(1) : '--')+'%',
+        pass: dir === 'call' ? m.skew > 7 : m.skew < 4,
+        warn: dir === 'call' ? m.skew > 5 : m.skew < 6 });
+
+      // 3. vs HV折价 (max 20)
+      const cheap_pts = cheap != null ? Math.min(20, Math.max(0, cheap / 30 * 20)) : 0;
+      score += cheap_pts;
+      checks.push({ name: 'HV折价', val: cheap != null ? cheap.toFixed(1)+'%' : '--',
+        pass: cheap > 15, warn: cheap > 5 });
+
+      // 4. 盈亏平衡距离 (max 20) — LOW is better (low freq: require < 3%)
+      const be_pts = be != null ? Math.max(0, 20 - be * 5) : 0;
+      score += be_pts;
+      checks.push({ name: 'BE距离', val: be != null ? be.toFixed(1)+'%' : '--',
+        pass: be < 3, warn: be < 5 });
+
+      // 5. 盈亏比 (max 15)
+      const rr_pts = rr != null ? Math.min(15, Math.max(0, (rr - 0.5) / 2.5 * 15)) : 0;
+      score += rr_pts;
+      checks.push({ name: '盈亏比', val: rr != null ? rr.toFixed(2)+':1' : '--',
+        pass: rr >= 1.5, warn: rr >= 1 });
+
+      // 6. Historical Z-Score bonus (max 20)
+      let zBonus = 0; let zInfo = null;
+      if (histCtx) {
+        const key = `${m.product}_${m.expiry_type}`;
+        const hc = histCtx[key];
+        if (hc) {
+          const relevantZ = dir === 'call' ? hc.skew?.z : (hc.skew ? -hc.skew.z : null);
+          const csrZ = hc.csr?.z;
+          if (relevantZ != null) {
+            zBonus += Math.min(10, Math.max(0, (relevantZ - 1) * 5));
+            zInfo = { skewZ: hc.skew?.z, csrZ, skewPct: hc.skew?.pct, csrPct: hc.csr?.pct, n: hc.n };
+          }
+          if (csrZ != null) zBonus += Math.min(10, Math.max(0, (csrZ - 1) * 5));
+        }
+      }
+      score += zBonus;
+      if (zInfo) checks.push({
+        name: 'Z-Score',
+        val: zInfo.skewZ != null ? zInfo.skewZ.toFixed(2) : '--',
+        pass: Math.abs(zInfo.skewZ) > 2, warn: Math.abs(zInfo.skewZ) > 1.5
+      });
+
+      score = Math.min(100, Math.round(score));
+      const grade = score >= 72 ? 'A' : score >= 52 ? 'B' : score >= 32 ? 'C' : 'D';
+
+      // Low-freq safety check: require ALL of these
+      const safetyPassed = csr >= 3.5 && (be == null || be < 3) && (rr == null || rr >= 1.2);
+      const signal = safetyPassed && score >= 72 ? 'strong'
+                   : safetyPassed && score >= 52 ? 'watch' : 'weak';
+
+      opportunities.push({
+        product: m.product, contract: m.contract,
+        expiry_type: m.expiry_type, dir, spread,
+        score, grade, signal, checks, zInfo,
+        csr, cheap, be, rr, skew: m.skew
+      });
+    });
+  });
+
+  // Also compare cross-month (near vs mid same product)
+  const products = [...new Set(tradeable.map(m => m.product))];
+  products.forEach(p => {
+    const near = tradeable.find(m => m.product === p && m.expiry_type === 'near');
+    const mid  = tradeable.find(m => m.product === p && m.expiry_type === 'mid');
+    if (near && mid) {
+      // If mid CSR significantly better than near, flag it
+      const nearCSR = Math.max(near.csr || 0, near.psr || 0);
+      const midCSR  = Math.max(mid.csr  || 0, mid.psr  || 0);
+      if (midCSR > nearCSR * 1.2) {
+        // Boost mid score
+        const midOpps = opportunities.filter(o => o.product === p && o.expiry_type === 'mid');
+        midOpps.forEach(o => { o.crossMonthBoost = true; });
+      }
+    }
+  });
+
+  return opportunities.sort((a, b) => b.score - a.score);
+}
+
+// ── Render Results ────────────────────────────────────────────
+function renderResults({ rawData, metrics, histCtx, opportunities }) {
+  document.getElementById('empty-state').classList.add('hidden');
+  document.getElementById('loading-state').classList.add('hidden');
+  document.getElementById('results').classList.remove('hidden');
+
+  const now = new Date().toLocaleString('zh-CN', { hour12: false });
+  document.getElementById('result-time').textContent = now;
+  document.getElementById('last-update').textContent = '最后更新 ' + now;
+
+  renderOpportunities(opportunities);
+  renderTermStructure(metrics);
+  renderCrossAsset(metrics);
+  if (histCtx && Object.keys(histCtx).length) renderHistoricalContext(histCtx, metrics);
+  renderRawData(rawData);
+  renderHistoryStats();
+}
+
+function renderOpportunities(opps) {
+  const el = document.getElementById('opportunity-list');
+  if (!opps.length) { el.innerHTML = '<div class="no-data">未能识别足够的期权数据</div>'; return; }
+
+  const top = opps.slice(0, 6);
+  el.innerHTML = top.map((o, i) => {
+    const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-n';
+    const productColor = o.product === 'MO' ? 'blue' : o.product === 'HO' ? 'gold' : 'green';
+    const dirLabel = o.dir === 'call' ? '📈 认购价差' : '📉 认沽价差';
+    const expiryLabel = o.expiry_type === 'near' ? '近月' : '次近月';
+    const signalClass = o.signal === 'strong' ? 'signal-strong' : o.signal === 'watch' ? 'signal-watch' : 'signal-weak';
+    const signalText = o.signal === 'strong' ? '✓ 触发信号' : o.signal === 'watch' ? '~ 观察中' : '— 未触发';
+
+    const checksHTML = o.checks.map(c => `
+      <div class="metric-pill ${c.pass ? 'highlight' : ''}">
+        <span class="pill-label">${c.name}</span>
+        <span class="pill-val ${c.pass ? 'green' : c.warn ? 'gold' : 'muted'}">${c.val}</span>
+      </div>
+    `).join('');
+
+    const spreadInfo = `买${o.spread.k1} / 卖${o.spread.k2}，净成本 ${o.spread.cost.toFixed(1)}，最大盈利 ${(o.spread.width - o.spread.cost).toFixed(1)}`;
+
+    const boost = o.crossMonthBoost ? ' <span class="muted">（次近月跨月优选）</span>' : '';
+    const zNote = o.zInfo ? `· Skew Z=${o.zInfo.skewZ?.toFixed(2) || '--'} (历史${o.zInfo.skewPct?.toFixed(0) || '--'}分位)` : '';
+    const verdict = o.signal === 'strong'
+      ? `低频安全垫条件已满足。${spreadInfo}。${zNote}`
+      : o.signal === 'watch'
+      ? `性价比基本达标但安全垫不足（需：CSR≥3.5×，BE<3%）。可继续观察。`
+      : `当前定价偏贵或安全垫不足，建议等待更好时机。`;
+
+    return `
+      <div class="opp-card grade-${o.grade}">
+        <div class="opp-rank ${rankClass}">${i+1}</div>
+        <div class="opp-main">
+          <div class="opp-title">
+            <span class="${productColor}">${o.product}</span> ${o.contract} · ${expiryLabel} · ${dirLabel}${boost}
+          </div>
+          <div class="opp-sub">综合得分 ${o.score}/100 · 安全垫门槛：CSR≥3.5× BE<3%</div>
+          <div class="opp-metrics">${checksHTML}</div>
+        </div>
+        <div class="opp-score">
+          <div class="score-grade">${o.grade}</div>
+          <div class="score-pts">${o.score}/100</div>
+          <div class="score-signal ${signalClass}">${signalText}</div>
+        </div>
+        <div class="opp-verdict">${verdict}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTermStructure(metrics) {
+  const el = document.getElementById('term-structure');
+  if (!metrics.length) { el.innerHTML = '<div class="no-data">数据不足</div>'; return; }
+
+  const products = [...new Set(metrics.map(m => m.product))];
+  const expiryOrder = ['near', 'mid', 'far'];
+  const expiryLabel = { near: '近月', mid: '次近月', far: '季月(参考)' };
+  const productColor = { MO: 'var(--accent)', HO: 'var(--gold)', IO: 'var(--green)' };
+
+  let rows = '';
+  products.forEach(p => {
+    const contracts = expiryOrder.map(e => metrics.find(m => m.product === p && m.expiry_type === e)).filter(Boolean);
+    if (!contracts.length) return;
+
+    // Term structure shape
+    const ivSeq = contracts.map(c => c.atm?.call_iv).filter(v => v != null);
+    let structure = '', structureClass = '';
+    if (ivSeq.length >= 2) {
+      const trend = ivSeq[ivSeq.length-1] - ivSeq[0];
+      if (trend > 1) { structure = '升水 Contango ↗'; structureClass = 'contango'; }
+      else if (trend < -1) { structure = '贴水 Backwardation ↘'; structureClass = 'backwardation'; }
+      else { structure = '平坦 Flat →'; structureClass = 'flat'; }
+    }
+
+    contracts.forEach((c, idx) => {
+      const isFirst = idx === 0;
+      const isFar = c.expiry_type === 'far';
+      const skew = c.skew;
+      const skewClass = skew > 8 ? 'skew-high' : skew > 5 ? 'skew-mid' : 'skew-low';
+      const callIV = c.atm?.call_iv;
+      const putIV  = c.atm?.put_iv;
+      const ivBarW = callIV ? Math.min(100, callIV * 3) : 0;
+
+      rows += `
+        <tr>
+          ${isFirst ? `<td rowspan="${contracts.length}">
+            <div class="asset-badge">
+              <span style="color:${productColor[p] || 'var(--text)'}">●</span> ${p}
+            </div>
+            <div style="margin-top:4px;" class="structure-arrow">
+              <span class="${structureClass}">${structure}</span>
+            </div>
+          </td>` : ''}
+          <td style="color:var(--text2);font-family:var(--mono);font-size:11px;">
+            ${expiryLabel[c.expiry_type] || c.expiry_type}
+            ${isFar ? '<span style="font-size:9px;color:var(--muted)"> 仅参考</span>' : ''}
+          </td>
+          <td>
+            <div class="iv-bar-wrap">
+              <div class="iv-bar">
+                <div class="iv-bar-fill" style="width:${ivBarW}%;background:${productColor[p] || 'var(--accent)'}"></div>
+              </div>
+              <span class="iv-val" style="color:${productColor[p] || 'var(--text)'}">
+                ${callIV != null ? callIV.toFixed(1)+'%' : '--'}
+              </span>
+            </div>
+          </td>
+          <td>
+            <span class="iv-val" style="color:var(--red-dim)">
+              ${putIV != null ? putIV.toFixed(1)+'%' : '--'}
+            </span>
+          </td>
+          <td>
+            ${skew != null ? `<span class="skew-badge ${skewClass}">${skew.toFixed(1)}%</span>` : '--'}
+          </td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">
+            ${c.csr != null ? c.csr.toFixed(2)+'×' : '--'}
+            ${c.psr != null ? ' / '+c.psr.toFixed(2)+'×' : ''}
+          </td>
+        </tr>
+      `;
+    });
+  });
+
+  el.innerHTML = `
+    <table class="term-table">
+      <thead>
+        <tr>
+          <th>品种</th><th>月份</th><th>Call IV</th><th>Put IV</th><th>偏斜</th><th>CSR/PSR</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderCrossAsset(metrics) {
+  const el = document.getElementById('cross-asset');
+  const products = ['MO', 'HO', 'IO'];
+  const expiryTypes = ['near', 'mid'];
+  const productNames = { MO: '中证1000', HO: '沪深300', IO: '上证50' };
+  const productColor = { MO: 'tag-mo', HO: 'tag-ho', IO: 'tag-io' };
+
+  let html = '<div class="cross-grid">';
+  products.forEach(p => {
+    const contracts = expiryTypes.map(e => metrics.find(m => m.product === p && m.expiry_type === e)).filter(Boolean);
+    if (!contracts.length) return;
+
+    const avgSkew = contracts.reduce((a,c) => a + (c.skew||0), 0) / contracts.length;
+    const bestCSR  = Math.max(...contracts.map(c => Math.max(c.csr||0, c.psr||0)));
+    const bestDir  = contracts.reduce((best, c) => {
+      const csr = Math.max(c.csr||0, c.psr||0);
+      return csr > (best?.csr||0) ? { csr, dir: c.csr > c.psr ? 'Call' : 'Put', contract: c.contract } : best;
+    }, null);
+
+    html += `
+      <div class="cross-card">
+        <div class="cross-card-title"><span class="tag ${productColor[p]}">${p}</span> ${productNames[p]}</div>
+        <div class="cross-metric">
+          <div class="cm-label">平均IV偏斜</div>
+          <div class="cm-val ${avgSkew > 7 ? 'red' : avgSkew > 5 ? 'gold' : 'green'}">${avgSkew.toFixed(1)}%</div>
+        </div>
+        <div class="cross-metric">
+          <div class="cm-label">最佳性价比</div>
+          <div class="cm-val ${bestCSR >= 3.5 ? 'green' : bestCSR >= 2.5 ? 'gold' : 'red'}">${bestCSR.toFixed(2)}×</div>
+        </div>
+        <div class="cross-rank">
+          <div class="cross-rank-label">
+            优选：${bestDir ? bestDir.contract + ' ' + bestDir.dir + ' 价差' : '数据不足'}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderHistoricalContext(histCtx, metrics) {
+  const section = document.getElementById('section-history');
+  const el = document.getElementById('historical-context');
+  const countEl = document.getElementById('history-data-count');
+  section.style.display = '';
+
+  const n = Math.max(...Object.values(histCtx).map(v => v.skew?.n || 0));
+  countEl.textContent = `${n} 个历史快照 · ${n >= 100 ? '百分位已激活' : n >= 20 ? 'Z-Score已激活' : '积累中'}`;
+
+  let html = '<div class="hist-grid">';
+  Object.entries(histCtx).forEach(([key, ctx]) => {
+    const [product, expiry] = key.split('_');
+    const expiryLabel = { near: '近月', mid: '次近月', far: '季月' };
+    if (!ctx.skew && !ctx.csr) return;
+
+    const zClass = v => Math.abs(v) > 2 ? (v > 0 ? 'z-pos' : 'z-neg') : Math.abs(v) > 1 ? 'gold' : 'z-neutral';
+
+    html += `
+      <div class="hist-card">
+        <div class="hist-card-title">${product} ${expiryLabel[expiry] || expiry}</div>
+        ${ctx.skew ? `
+          <div style="margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:4px">
+              <span>IV偏斜</span>
+              <span class="z-score-display ${zClass(ctx.skew.z)}">Z=${ctx.skew.z.toFixed(2)}</span>
+            </div>
+            <div class="percentile-bar">
+              <div class="percentile-fill" style="width:${ctx.skew.pct}%;background:${ctx.skew.z > 1.5 ? 'var(--red)' : ctx.skew.z > 0 ? 'var(--gold)' : 'var(--green)'}"></div>
+              <div class="percentile-marker" style="left:${ctx.skew.pct}%"></div>
+            </div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">
+              历史${ctx.skew.pct.toFixed(0)}分位 · 均值${ctx.skew.mean.toFixed(1)}% · σ=${ctx.skew.std.toFixed(1)}
+            </div>
+          </div>
+        ` : ''}
+        ${ctx.csr ? `
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:4px">
+              <span>认购CSR</span>
+              <span class="z-score-display ${zClass(ctx.csr.z)}">Z=${ctx.csr.z.toFixed(2)}</span>
+            </div>
+            <div class="percentile-bar">
+              <div class="percentile-fill" style="width:${ctx.csr.pct}%;background:var(--accent)"></div>
+            </div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">
+              历史${ctx.csr.pct.toFixed(0)}分位 · 均值${ctx.csr.mean.toFixed(2)}× · σ=${ctx.csr.std.toFixed(2)}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderRawData(rawData) {
+  const el = document.getElementById('raw-data');
+  el.textContent = JSON.stringify(rawData, null, 2);
+}
+
+function toggleRaw() {
+  document.getElementById('raw-data').classList.toggle('hidden');
+}
+
+// ── History Persistence ───────────────────────────────────────
+function saveSnapshot(metrics) {
+  const snapshot = metrics.map(m => ({
+    product: m.product, expiry_type: m.expiry_type,
+    skew: m.skew, csr: m.csr, psr: m.psr, cpr: m.cpr,
+    atm_call_iv: m.atm?.call_iv, atm_put_iv: m.atm?.put_iv,
+    ts: Date.now()
+  }));
+  analysisHistory.push(snapshot);
+  if (analysisHistory.length > MAX_HISTORY) analysisHistory.shift();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(analysisHistory));
+  document.getElementById('history-count').textContent = `历史数据：${analysisHistory.length}条`;
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      analysisHistory = JSON.parse(raw);
+      document.getElementById('history-count').textContent = `历史数据：${analysisHistory.length}条`;
+    }
+  } catch { analysisHistory = []; }
+}
+
+function renderHistoryStats() {
+  const n = analysisHistory.length;
+  const block = document.getElementById('block-history');
+  const el = document.getElementById('history-stats');
+  if (n === 0) { block.style.display = 'none'; return; }
+  block.style.display = '';
+
+  const zReady  = n >= 20;
+  const pctReady = n >= 100;
+  const oldest = n > 0 ? new Date(analysisHistory[0][0]?.ts).toLocaleDateString('zh-CN') : '--';
+
+  el.innerHTML = `
+    <div class="hist-stat-row">
+      <span class="hist-stat-label">历史快照数</span>
+      <span class="hist-stat-val">${n} / ${MAX_HISTORY}</span>
+    </div>
+    <div class="hist-stat-row">
+      <span class="hist-stat-label">最早记录</span>
+      <span class="hist-stat-val">${oldest}</span>
+    </div>
+    <div class="hist-stat-row">
+      <span class="hist-stat-label">Z-Score</span>
+      <span class="hist-stat-val ${zReady ? 'hist-ready' : 'hist-building'}">${zReady ? '✓ 已激活' : `积累中 ${n}/20`}</span>
+    </div>
+    <div class="hist-stat-row">
+      <span class="hist-stat-label">历史百分位</span>
+      <span class="hist-stat-val ${pctReady ? 'hist-ready' : 'hist-building'}">${pctReady ? '✓ 已激活' : `积累中 ${n}/100`}</span>
+    </div>
+  `;
+}
+
+function exportHistory() {
+  const blob = new Blob([JSON.stringify(analysisHistory, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `options_arb_history_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+function clearHistory() {
+  if (!confirm('确定清除所有历史数据？此操作不可撤销。')) return;
+  analysisHistory = [];
+  localStorage.removeItem(STORAGE_KEY);
+  renderHistoryStats();
+  document.getElementById('history-count').textContent = '历史数据：0条';
+}
+
+// ── UI Helpers ────────────────────────────────────────────────
+function showEmpty() {
+  document.getElementById('empty-state').classList.remove('hidden');
+  document.getElementById('loading-state').classList.add('hidden');
+  document.getElementById('results').classList.add('hidden');
+}
+function showLoading(text) {
+  document.getElementById('empty-state').classList.add('hidden');
+  document.getElementById('loading-state').classList.remove('hidden');
+  document.getElementById('results').classList.add('hidden');
+  setLoadingText(text, '');
+}
+function setLoadingText(text, sub) {
+  document.getElementById('loading-text').textContent = text;
+  document.getElementById('loading-sub').textContent = sub;
+}
+
+</script>
+</body>
+</html>
